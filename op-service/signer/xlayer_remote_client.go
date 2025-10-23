@@ -227,11 +227,72 @@ func (c *XLayerRemoteClient) SignTransaction(ctx context.Context, chainId *big.I
 		"depositAddress_in_struct", signReq.DepositeAddress,
 		"toAddress_in_struct", signReq.ToAddress,
 		"tx_to_is_nil", tx.To() == nil)
-	time.Sleep(3 * time.Second)
-	// 4. Send signing request and wait for result
-	signedTx, err := c.postSignRequestAndWaitResult(ctx, signReq, tx)
-	if err != nil {
-		return nil, fmt.Errorf("remote signing failed: %w", err)
+
+	// 4. Send signing request and wait for result with intelligent retry logic
+	// Retry only for "pending transaction" errors from remote signer
+	var signedTx *types.Transaction
+	maxRetries := 3
+	retryDelay := 3 * time.Second
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			c.logger.Warn("Retrying remote signing after pending transaction error",
+				"attempt", attempt,
+				"max_retries", maxRetries,
+				"delay", retryDelay,
+				"nonce", tx.Nonce())
+
+			// Wait before retry, respecting context cancellation
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("context cancelled during retry: %w", ctx.Err())
+			case <-time.After(retryDelay):
+				// Continue to retry
+			}
+		}
+
+		var err error
+		signedTx, err = c.postSignRequestAndWaitResult(ctx, signReq, tx)
+		if err == nil {
+			// Success - transaction signed
+			if attempt > 0 {
+				c.logger.Info("Remote signing succeeded after retry",
+					"attempt", attempt,
+					"nonce", tx.Nonce())
+			}
+			break
+		}
+
+		// Check if error is "pending transaction" related
+		errStr := err.Error()
+		isPendingTxError := strings.Contains(errStr, "未完成交易") ||
+			strings.Contains(errStr, "pending transaction") ||
+			strings.Contains(errStr, "相同地址有未完成交易") ||
+			strings.Contains(errStr, "has pending transactions")
+
+		if !isPendingTxError {
+			// Not a pending tx error - fail immediately without retry
+			c.logger.Error("Remote signing failed with non-retryable error",
+				"error", err,
+				"nonce", tx.Nonce())
+			return nil, fmt.Errorf("remote signing failed: %w", err)
+		}
+
+		if attempt == maxRetries {
+			// Max retries reached for pending tx error
+			c.logger.Error("Remote signing failed after max retries",
+				"max_retries", maxRetries,
+				"error", err,
+				"nonce", tx.Nonce())
+			return nil, fmt.Errorf("remote signing failed after %d retries (pending transaction): %w", maxRetries, err)
+		}
+
+		// Will retry - log the pending transaction error
+		c.logger.Info("Remote signer reported pending transaction, will retry",
+			"nonce", tx.Nonce(),
+			"attempt", attempt+1,
+			"max_retries", maxRetries,
+			"next_retry_in", retryDelay)
 	}
 
 	// 5. Verify signed transaction consistency
