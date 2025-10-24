@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/md5"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -120,12 +119,6 @@ type bufferWriter struct {
 func (bw *bufferWriter) Write(p []byte) (n int, err error) {
 	*bw.buffer = append(*bw.buffer, p...)
 	return len(p), nil
-}
-
-func signByMd5(content string) []byte {
-	hash := md5.New() // golint:ignore
-	hash.Write([]byte(content))
-	return []byte(hex.EncodeToString(hash.Sum(nil)))
 }
 
 func signBySha256(content string) []byte {
