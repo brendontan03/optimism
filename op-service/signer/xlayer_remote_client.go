@@ -232,7 +232,7 @@ func (c *XLayerRemoteClient) SignTransaction(ctx context.Context, chainId *big.I
 	// Retry only for "pending transaction" errors from remote signer
 	var signedTx *types.Transaction
 	maxRetries := 3
-	retryDelay := 10 * time.Second
+	retryDelay := 5 * time.Second
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
