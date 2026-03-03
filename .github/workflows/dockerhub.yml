@@ -28,6 +28,7 @@ jobs:
         run: |
           git remote add upstream https://github.com/okx/optimism.git || true
           git fetch upstream --tags --force
+          git push origin --tags
           echo "Fetched tags from upstream"
 
       - name: Validate tag exists
