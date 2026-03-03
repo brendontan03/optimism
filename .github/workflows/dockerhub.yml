@@ -1,0 +1,81 @@
+name: Push Docker Image to DockerHub
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g., v0.1.5)'
+        required: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch all tags from upstream
+        run: |
+          git remote add upstream https://github.com/ethereum-optimism/optimism.git || true
+          git fetch upstream --tags
+          echo "Fetched tags from upstream"
+
+      - name: Validate tag exists
+        id: validate-tag
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "✅ Tag $TAG exists"
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Error: Tag $TAG does not exist in the repository"
+            echo "Available tags:"
+            git tag --sort=-creatordate | head -n 10
+            exit 1
+          fi
+
+      - name: Checkout specified tag
+        run: |
+          git checkout ${{ steps.validate-tag.outputs.tag }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # - name: Build and push Docker image
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     context: .
+      #     file: ./Dockerfile-opstack
+      #     platforms: linux/amd64
+      #     push: true
+      #     tags: |
+      #       xlayer/op-node:${{ steps.validate-tag.outputs.tag }}
+      #       xlayer/op-node:latest
+      #     cache-from: type=gha
+      #     cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "### Docker Build Complete :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ steps.validate-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** xlayer/op-node" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms:** linux/amd64" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "View on DockerHub: https://hub.docker.com/r/xlayer/op-node/tags" >> $GITHUB_STEP_SUMMARY
