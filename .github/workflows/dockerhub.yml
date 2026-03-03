@@ -27,7 +27,7 @@ jobs:
       - name: Fetch all tags from upstream
         run: |
           git remote add upstream https://github.com/okx/optimism.git || true
-          git fetch upstream --tags
+          git fetch upstream --tags --force
           echo "Fetched tags from upstream"
 
       - name: Validate tag exists
